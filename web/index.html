@@ -3,56 +3,69 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Son Marketplace</title>
+    <title>Son Pixel Market</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
   </head>
   <body>
     <header class="topbar">
-      <h1>Son Alan Pazaryeri</h1>
+      <div>
+        <h1>Son Pixel Market</h1>
+        <p class="subtitle">Boş pikselleri seç, ilan aç, MATIC ile al-sat.</p>
+      </div>
       <div class="wallet-row">
         <button id="connectWalletBtn">MetaMask ile Giriş</button>
         <span id="walletStatus">Bağlı değil</span>
       </div>
     </header>
 
-    <main class="container">
-      <section class="panel">
-        <h2>Yeni Alan Oluştur</h2>
-        <form id="createAreaForm">
-          <input id="createAreaName" placeholder="alan-adi" required />
-          <button type="submit">Alan Oluştur</button>
-        </form>
+    <main class="layout">
+      <section class="panel stage">
+        <div class="stage-head">
+          <h2>Reklam Tuvali</h2>
+          <div id="stats" class="muted"></div>
+        </div>
+        <canvas id="pixelCanvas" width="1000" height="600" aria-label="Pixel marketplace"></canvas>
+        <div class="legend muted">
+          <span><i class="dot free"></i>Boş</span>
+          <span><i class="dot mine"></i>Benim</span>
+          <span><i class="dot listed"></i>Satışta</span>
+          <span><i class="dot sold"></i>Sahipli</span>
+        </div>
       </section>
 
-      <section class="panel">
-        <h2>Alanı Satışa Koy</h2>
-        <form id="sellAreaForm">
-          <input id="sellAreaName" placeholder="alan-adi" required />
-          <input id="sellAreaPrice" type="number" min="0.0001" step="0.0001" placeholder="Fiyat (MATIC)" required />
+      <aside class="panel sidebar">
+        <h2>Seçili Blok</h2>
+        <p id="selectionInfo" class="muted">Tuvalde sürükleyip bir dikdörtgen seç.</p>
+
+        <form id="mintForm">
+          <label>Blok adı
+            <input id="blockName" placeholder="anasayfa-ust-banner" required />
+          </label>
+          <button type="submit">Seçimi Sahiplen</button>
+        </form>
+
+        <form id="sellForm">
+          <label>Satış fiyatı (MATIC)
+            <input id="sellPrice" type="number" min="0.0001" step="0.0001" required />
+          </label>
           <button type="submit">Satışa Koy</button>
         </form>
-      </section>
 
-      <section class="panel">
-        <h2>Pazar Alanları</h2>
-        <p class="hint">Her satışta platform komisyonu sabit %10.</p>
-        <div id="marketGrid" class="grid"></div>
-      </section>
+        <h3>Pazardaki Alanlar</h3>
+        <div id="marketList"></div>
 
-      <section class="panel">
-        <h2>İşlem Geçmişi</h2>
-        <div id="txHistory"></div>
-      </section>
+        <h3>İşlem Geçmişi</h3>
+        <div id="history"></div>
+      </aside>
     </main>
 
     <template id="listingTemplate">
-      <article class="card">
-        <h3 class="name"></h3>
-        <p class="owner"></p>
+      <article class="listing">
+        <strong class="name"></strong>
+        <p class="meta"></p>
         <p class="price"></p>
-        <p class="commission"></p>
-        <button class="buyBtn">MATIC ile Satın Al</button>
+        <button class="buyBtn">Satın Al (MATIC)</button>
       </article>
     </template>
 
