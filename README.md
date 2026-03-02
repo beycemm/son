@@ -1,56 +1,37 @@
 # son
 
-Bu depo için çalışır bir başlangıç projesi hazırlandı: görev (todo) CLI'si + reklam alanı pazaryeri.
+Bu proje artık görsel bir web uygulaması olarak çalışır: reklam alanı al/sat pazaryeri + MetaMask ile giriş ve MATIC ödeme akışı.
 
 ## Özellikler
 
-- Görev ekleme/listeleme/tamamlama
-- Reklam alanı oluşturma (yeni alan)
-- Satın alınmış alanı istenen fiyatla tekrar satışa koyma
-- Yeni alanı istenen fiyatla satışa koyma
-- Her satışta platforma sabit `%10` komisyon
+- MetaMask ile giriş
+- Polygon (MATIC) ağı kontrolü
+- Yeni alan oluşturma
+- Sahip olunan alanı istenen fiyattan satışa koyma
+- Satın alınan alanı tekrar istenen fiyattan satışa koyma
+- Her satışta sabit `%10` platform komisyonu
+- Alan kartları ve işlem geçmişi ile görsel arayüz
 
-## Kurulum
+## Web uygulamasını çalıştırma
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-## Kullanım
-
-### Görev CLI
+Kök dizinde:
 
 ```bash
-python -m son.app add "Dokümantasyonu güncelle"
-python -m son.app list
-python -m son.app done 1
+python -m http.server 8000
 ```
 
-### Alan pazaryeri
+Sonra tarayıcıda:
 
-```bash
-# yeni alan oluştur
-python -m son.app area-create alice billboard-1
+- `http://localhost:8000/web/`
 
-# sahibi istediği fiyattan satışa koysun
-python -m son.app area-sell alice billboard-1 250
+## Önemli notlar
 
-# pazarı görüntüle
-python -m son.app area-market
-
-# alanı satın al
-python -m son.app area-buy bob billboard-1
-
-# yeni sahip yine istediği fiyata tekrar satışa koyabilir
-python -m son.app area-sell bob billboard-1 333
-
-# kullanıcının sahip olduğu alanları gör
-python -m son.app area-portfolio bob
-```
-
-Satış çıktısında komisyon ve satıcıya kalan tutar ayrı gösterilir.
+- Ödemeler MetaMask `eth_sendTransaction` ile yapılır.
+- Alım sırasında 2 ayrı transfer açılır:
+  1) Platform cüzdanına `%10` komisyon
+  2) Satıcı cüzdanına kalan ödeme
+- Platform cüzdan adresini `web/app.js` içindeki `PLATFORM_WALLET` alanından güncelleyin.
+- Pazar verileri şu an demo amaçlı tarayıcı `localStorage` içinde tutulur.
 
 ## Test
 
