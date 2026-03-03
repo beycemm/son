@@ -1,7 +1,7 @@
 # son
 
 Bu proje modern bir **pixel reklam pazaryeri** olarak çalışır.
-Kullanıcılar önce boş pikselleri görür, tuvalden blok seçer, sahiplenir, satışa koyar ve MetaMask ile MATIC üzerinden satın alma yapar.
+Kullanıcılar boş pikselleri görür, tuvalden blok seçer, sahiplenir, satışa koyar ve MetaMask ile MATIC üzerinden satın alma yapar.
 
 ## Neler var?
 
@@ -9,7 +9,8 @@ Kullanıcılar önce boş pikselleri görür, tuvalden blok seçer, sahiplenir, 
 - Polygon (MATIC) ağı doğrulama
 - 100x60 pixel tuval (boş/satışta/sahipli renkli görünüm)
 - Seç-sürükle ile dikdörtgen blok belirleme
-- Sahiplenme ve ilan açma
+- Blok sahiplenirken **link** ve **resim URL** ekleme
+- Sahip olunan bloğun link/resim içeriğini sonradan güncelleme
 - Her satışta sabit `%10` komisyon
 - Alımda iki transfer:
   1. Platform komisyonu

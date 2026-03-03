@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <h1>Son Pixel Market</h1>
-        <p class="subtitle">Boş pikselleri seç, ilan aç, MATIC ile al-sat.</p>
+        <p class="subtitle">Boş pikselleri seç, ilan aç, link/resim ekle ve MATIC ile al-sat.</p>
       </div>
       <div class="wallet-row">
         <button id="connectWalletBtn">MetaMask ile Giriş</button>
@@ -42,7 +42,23 @@
           <label>Blok adı
             <input id="blockName" placeholder="anasayfa-ust-banner" required />
           </label>
+          <label>Reklam linki (opsiyonel)
+            <input id="blockLink" type="url" placeholder="https://ornek.com" />
+          </label>
+          <label>Resim URL (opsiyonel)
+            <input id="blockImage" type="url" placeholder="https://site.com/gorsel.jpg" />
+          </label>
           <button type="submit">Seçimi Sahiplen</button>
+        </form>
+
+        <form id="updateContentForm">
+          <label>Link güncelle
+            <input id="updateLink" type="url" placeholder="https://ornek.com" />
+          </label>
+          <label>Resim URL güncelle
+            <input id="updateImage" type="url" placeholder="https://site.com/yeni-gorsel.jpg" />
+          </label>
+          <button type="submit">Seçili Bloğu Güncelle</button>
         </form>
 
         <form id="sellForm">
@@ -51,6 +67,8 @@
           </label>
           <button type="submit">Satışa Koy</button>
         </form>
+
+        <div id="preview" class="preview muted">Seçili blok detayları burada görünecek.</div>
 
         <h3>Pazardaki Alanlar</h3>
         <div id="marketList"></div>
@@ -65,6 +83,7 @@
         <strong class="name"></strong>
         <p class="meta"></p>
         <p class="price"></p>
+        <a class="link" target="_blank" rel="noopener noreferrer"></a>
         <button class="buyBtn">Satın Al (MATIC)</button>
       </article>
     </template>

@@ -18,13 +18,16 @@ const pixelCanvas = document.getElementById("pixelCanvas");
 const ctx = pixelCanvas.getContext("2d");
 const selectionInfo = document.getElementById("selectionInfo");
 const stats = document.getElementById("stats");
+const preview = document.getElementById("preview");
 const mintForm = document.getElementById("mintForm");
+const updateContentForm = document.getElementById("updateContentForm");
 const sellForm = document.getElementById("sellForm");
 const marketList = document.getElementById("marketList");
 const history = document.getElementById("history");
 const listingTemplate = document.getElementById("listingTemplate");
 
 const defaultState = { blocks: [], listings: [], transactions: [] };
+const imageCache = new Map();
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -38,6 +41,16 @@ function saveState(state) {
 function shortAddress(address) {
   if (!address) return "";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function cleanUrl(url) {
+  const value = (url || "").trim();
+  if (!value) return "";
+  const parsed = new URL(value);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Sadece http/https URL kullanılabilir.");
+  }
+  return parsed.toString();
 }
 
 function overlaps(a, b) {
@@ -69,6 +82,36 @@ function selectedRect() {
   return activeSelection;
 }
 
+function findBlockByRect(rect) {
+  if (!rect) return null;
+  const state = loadState();
+  return state.blocks.find((b) => b.x === rect.x && b.y === rect.y && b.w === rect.w && b.h === rect.h) || null;
+}
+
+function drawBlockImage(block) {
+  if (!block.imageUrl) return;
+
+  let img = imageCache.get(block.imageUrl);
+  if (!img) {
+    img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = block.imageUrl;
+    img.onload = () => render();
+    img.onerror = () => imageCache.delete(block.imageUrl);
+    imageCache.set(block.imageUrl, img);
+    return;
+  }
+
+  if (!img.complete || img.naturalWidth === 0) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+  ctx.clip();
+  ctx.drawImage(img, block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+  ctx.restore();
+}
+
 function drawGrid() {
   const state = loadState();
   ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
@@ -87,6 +130,7 @@ function drawGrid() {
     }
 
     ctx.fillRect(block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+    drawBlockImage(block);
   });
 
   ctx.strokeStyle = "rgba(148,163,184,0.2)";
@@ -111,18 +155,15 @@ function drawGrid() {
     ctx.lineWidth = 1;
   }
 
-  const sold = state.blocks.length;
   const total = GRID_COLS * GRID_ROWS;
   const usedPixels = state.blocks.reduce((acc, b) => acc + b.w * b.h, 0);
-  stats.textContent = `Toplam ${total} piksel | Ayrılmış ${usedPixels} | Boş ${total - usedPixels} | Blok ${sold}`;
+  stats.textContent = `Toplam ${total} piksel | Ayrılmış ${usedPixels} | Boş ${total - usedPixels} | Blok ${state.blocks.length}`;
 }
 
 async function ensurePolygonNetwork() {
   if (!window.ethereum) throw new Error("MetaMask bulunamadı.");
   const currentChain = await window.ethereum.request({ method: "eth_chainId" });
-  if (currentChain === POLYGON_CHAIN_ID) {
-    return;
-  }
+  if (currentChain === POLYGON_CHAIN_ID) return;
 
   try {
     await window.ethereum.request({
@@ -146,7 +187,7 @@ async function connectWallet() {
   render();
 }
 
-function mintBlock(name) {
+function mintBlock(name, linkUrl, imageUrl) {
   if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
   const rect = selectedRect();
   if (!rect) throw new Error("Önce tuvalden alan seçin.");
@@ -157,7 +198,30 @@ function mintBlock(name) {
   }
 
   const id = crypto.randomUUID();
-  state.blocks.push({ id, name, owner: currentAccount, ...rect });
+  state.blocks.push({
+    id,
+    name,
+    owner: currentAccount,
+    linkUrl: cleanUrl(linkUrl),
+    imageUrl: cleanUrl(imageUrl),
+    ...rect,
+  });
+  saveState(state);
+}
+
+function updateSelectedBlockContent(linkUrl, imageUrl) {
+  if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
+  const rect = selectedRect();
+  const block = findBlockByRect(rect);
+  if (!block) throw new Error("Seçili blok bulunamadı.");
+  if (block.owner.toLowerCase() !== currentAccount.toLowerCase()) {
+    throw new Error("Sadece blok sahibi link/resim güncelleyebilir.");
+  }
+
+  const state = loadState();
+  const target = state.blocks.find((item) => item.id === block.id);
+  target.linkUrl = cleanUrl(linkUrl);
+  target.imageUrl = cleanUrl(imageUrl);
   saveState(state);
 }
 
@@ -189,10 +253,7 @@ function listSelectedBlock(price) {
 
 async function sendMatic(from, to, amountMatic) {
   const valueHex = ethers.utils.hexValue(ethers.utils.parseEther(String(amountMatic)));
-  return window.ethereum.request({
-    method: "eth_sendTransaction",
-    params: [{ from, to, value: valueHex }],
-  });
+  return window.ethereum.request({ method: "eth_sendTransaction", params: [{ from, to, value: valueHex }] });
 }
 
 async function buyListing(blockId) {
@@ -230,6 +291,28 @@ async function buyListing(blockId) {
   saveState(state);
 }
 
+function renderPreview() {
+  const block = findBlockByRect(selectedRect());
+  if (!block) {
+    preview.className = "preview muted";
+    preview.innerHTML = "Seçili blok detayları burada görünecek.";
+    return;
+  }
+
+  const ownership = currentAccount && block.owner.toLowerCase() === currentAccount.toLowerCase() ? "(Senin)" : "";
+  preview.className = "preview";
+  preview.innerHTML = `
+    <strong>${block.name} ${ownership}</strong>
+    <p>Koordinat: (${block.x}, ${block.y}) ${block.w}x${block.h}</p>
+    <p>Sahip: ${shortAddress(block.owner)}</p>
+    <p>Link: ${block.linkUrl ? `<a href="${block.linkUrl}" target="_blank" rel="noopener noreferrer">${block.linkUrl}</a>` : "-"}</p>
+    ${block.imageUrl ? `<img src="${block.imageUrl}" alt="${block.name}" />` : ""}
+  `;
+
+  document.getElementById("updateLink").value = block.linkUrl || "";
+  document.getElementById("updateImage").value = block.imageUrl || "";
+}
+
 function renderMarketAndHistory() {
   const state = loadState();
   marketList.innerHTML = "";
@@ -244,6 +327,15 @@ function renderMarketAndHistory() {
       item.querySelector(".name").textContent = block.name;
       item.querySelector(".meta").textContent = `Koordinat: (${block.x},${block.y}) ${block.w}x${block.h} | Satıcı: ${shortAddress(listing.seller)}`;
       item.querySelector(".price").textContent = `Fiyat: ${listing.price} MATIC (Komisyon: ${(listing.price * COMMISSION_RATE).toFixed(4)} MATIC)`;
+
+      const linkEl = item.querySelector(".link");
+      if (block.linkUrl) {
+        linkEl.href = block.linkUrl;
+        linkEl.textContent = "Reklam Linki";
+      } else {
+        linkEl.textContent = "";
+      }
+
       item.querySelector(".buyBtn").addEventListener("click", async () => {
         try {
           await buyListing(listing.blockId);
@@ -274,12 +366,20 @@ function renderSelectionInfo() {
     selectionInfo.textContent = "Tuvalde sürükleyip bir dikdörtgen seç.";
     return;
   }
+
+  const block = findBlockByRect(rect);
+  if (block) {
+    selectionInfo.textContent = `Blok: ${block.name} | x=${rect.x}, y=${rect.y}, ${rect.w}x${rect.h}`;
+    return;
+  }
+
   selectionInfo.textContent = `Seçim: x=${rect.x}, y=${rect.y}, genişlik=${rect.w}, yükseklik=${rect.h}, piksel=${rect.w * rect.h}`;
 }
 
 function render() {
   renderSelectionInfo();
   drawGrid();
+  renderPreview();
   renderMarketAndHistory();
 }
 
@@ -299,16 +399,13 @@ pixelCanvas.addEventListener("pointermove", (evt) => {
 
 pixelCanvas.addEventListener("pointerup", (evt) => {
   if (!dragStart) return;
-
   const start = dragStart;
   const end = dragCurrent || start;
   const rect = normalizeRect(start, end);
 
   if (rect.w === 1 && rect.h === 1) {
     const hitBlock = findBlockAtCell(end);
-    activeSelection = hitBlock
-      ? { x: hitBlock.x, y: hitBlock.y, w: hitBlock.w, h: hitBlock.h }
-      : rect;
+    activeSelection = hitBlock ? { x: hitBlock.x, y: hitBlock.y, w: hitBlock.w, h: hitBlock.h } : rect;
   } else {
     activeSelection = rect;
   }
@@ -317,11 +414,6 @@ pixelCanvas.addEventListener("pointerup", (evt) => {
   dragCurrent = null;
   pixelCanvas.releasePointerCapture(evt.pointerId);
   render();
-});
-
-pixelCanvas.addEventListener("pointerleave", () => {
-  if (!dragStart) return;
-  dragCurrent = dragCurrent || dragStart;
 });
 
 connectWalletBtn.addEventListener("click", async () => {
@@ -336,11 +428,25 @@ mintForm.addEventListener("submit", (event) => {
   event.preventDefault();
   try {
     const name = document.getElementById("blockName").value.trim();
-    mintBlock(name);
+    const linkUrl = document.getElementById("blockLink").value;
+    const imageUrl = document.getElementById("blockImage").value;
+    mintBlock(name, linkUrl, imageUrl);
     mintForm.reset();
     render();
   } catch (error) {
     alert(error.message || "Blok sahiplenilemedi.");
+  }
+});
+
+updateContentForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    const linkUrl = document.getElementById("updateLink").value;
+    const imageUrl = document.getElementById("updateImage").value;
+    updateSelectedBlockContent(linkUrl, imageUrl);
+    render();
+  } catch (error) {
+    alert(error.message || "İçerik güncellenemedi.");
   }
 });
 
