@@ -10,6 +10,7 @@ const CELL_SIZE = 10;
 let currentAccount = null;
 let dragStart = null;
 let dragCurrent = null;
+let activeSelection = null;
 
 const connectWalletBtn = document.getElementById("connectWalletBtn");
 const walletStatus = document.getElementById("walletStatus");
@@ -64,8 +65,8 @@ function getCanvasCell(evt) {
 }
 
 function selectedRect() {
-  if (!dragStart || !dragCurrent) return null;
-  return normalizeRect(dragStart, dragCurrent);
+  if (dragStart && dragCurrent) return normalizeRect(dragStart, dragCurrent);
+  return activeSelection;
 }
 
 function drawGrid() {
@@ -117,9 +118,22 @@ function drawGrid() {
 }
 
 async function ensurePolygonNetwork() {
+  if (!window.ethereum) throw new Error("MetaMask bulunamadı.");
   const currentChain = await window.ethereum.request({ method: "eth_chainId" });
-  if (currentChain !== POLYGON_CHAIN_ID) {
-    throw new Error("Polygon Mainnet (MATIC) ağına geçin.");
+  if (currentChain === POLYGON_CHAIN_ID) {
+    return;
+  }
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: POLYGON_CHAIN_ID }],
+    });
+  } catch (error) {
+    if (error && error.code === 4902) {
+      throw new Error("Polygon ağı MetaMask'te bulunamadı. Lütfen ağı manuel ekleyin.");
+    }
+    throw new Error("Polygon Mainnet (MATIC) ağına geçiş yapılamadı.");
   }
 }
 
@@ -145,6 +159,16 @@ function mintBlock(name) {
   const id = crypto.randomUUID();
   state.blocks.push({ id, name, owner: currentAccount, ...rect });
   saveState(state);
+}
+
+function findBlockAtCell(cell) {
+  const state = loadState();
+  return state.blocks.find((block) => (
+    cell.x >= block.x
+    && cell.y >= block.y
+    && cell.x < block.x + block.w
+    && cell.y < block.y + block.h
+  ));
 }
 
 function listSelectedBlock(price) {
@@ -259,21 +283,45 @@ function render() {
   renderMarketAndHistory();
 }
 
-pixelCanvas.addEventListener("mousedown", (evt) => {
+pixelCanvas.addEventListener("pointerdown", (evt) => {
   dragStart = getCanvasCell(evt);
   dragCurrent = dragStart;
+  activeSelection = null;
+  pixelCanvas.setPointerCapture(evt.pointerId);
   render();
 });
 
-pixelCanvas.addEventListener("mousemove", (evt) => {
+pixelCanvas.addEventListener("pointermove", (evt) => {
   if (!dragStart) return;
   dragCurrent = getCanvasCell(evt);
   render();
 });
 
-window.addEventListener("mouseup", () => {
+pixelCanvas.addEventListener("pointerup", (evt) => {
   if (!dragStart) return;
+
+  const start = dragStart;
+  const end = dragCurrent || start;
+  const rect = normalizeRect(start, end);
+
+  if (rect.w === 1 && rect.h === 1) {
+    const hitBlock = findBlockAtCell(end);
+    activeSelection = hitBlock
+      ? { x: hitBlock.x, y: hitBlock.y, w: hitBlock.w, h: hitBlock.h }
+      : rect;
+  } else {
+    activeSelection = rect;
+  }
+
+  dragStart = null;
+  dragCurrent = null;
+  pixelCanvas.releasePointerCapture(evt.pointerId);
   render();
+});
+
+pixelCanvas.addEventListener("pointerleave", () => {
+  if (!dragStart) return;
+  dragCurrent = dragCurrent || dragStart;
 });
 
 connectWalletBtn.addEventListener("click", async () => {
