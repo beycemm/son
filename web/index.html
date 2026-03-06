@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Son Pixel Market</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Son Pixel Market</h1>
+        <p class="subtitle">Boş pikselleri seç, ilan aç, link/resim ekle ve MATIC ile al-sat.</p>
+      </div>
+      <div class="wallet-row">
+        <button id="connectWalletBtn">MetaMask ile Giriş</button>
+        <span id="walletStatus">Bağlı değil</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel stage">
+        <div class="stage-head">
+          <h2>Reklam Tuvali</h2>
+          <div id="stats" class="muted"></div>
+        </div>
+        <canvas id="pixelCanvas" width="1000" height="600" aria-label="Pixel marketplace"></canvas>
+        <div class="legend muted">
+          <span><i class="dot free"></i>Boş</span>
+          <span><i class="dot mine"></i>Benim</span>
+          <span><i class="dot listed"></i>Satışta</span>
+          <span><i class="dot sold"></i>Sahipli</span>
+        </div>
+      </section>
+
+      <aside class="panel sidebar">
+        <h2>Seçili Blok</h2>
+        <p id="selectionInfo" class="muted">Tuvalde sürükleyip bir dikdörtgen seç.</p>
+
+        <form id="mintForm">
+          <label>Blok adı
+            <input id="blockName" placeholder="anasayfa-ust-banner" required />
+          </label>
+          <label>Reklam linki (opsiyonel)
+            <input id="blockLink" type="url" placeholder="https://ornek.com" />
+          </label>
+          <label>Resim URL (opsiyonel)
+            <input id="blockImage" type="url" placeholder="https://site.com/gorsel.jpg" />
+          </label>
+          <button type="submit">Seçimi Sahiplen</button>
+        </form>
+
+        <form id="updateContentForm">
+          <label>Link güncelle
+            <input id="updateLink" type="url" placeholder="https://ornek.com" />
+          </label>
+          <label>Resim URL güncelle
+            <input id="updateImage" type="url" placeholder="https://site.com/yeni-gorsel.jpg" />
+          </label>
+          <button type="submit">Seçili Bloğu Güncelle</button>
+        </form>
+
+        <form id="sellForm">
+          <label>Satış fiyatı (MATIC)
+            <input id="sellPrice" type="number" min="0.0001" step="0.0001" required />
+          </label>
+          <button type="submit">Satışa Koy</button>
+        </form>
+
+        <div id="preview" class="preview muted">Seçili blok detayları burada görünecek.</div>
+
+        <h3>Pazardaki Alanlar</h3>
+        <div id="marketList"></div>
+
+        <h3>İşlem Geçmişi</h3>
+        <div id="history"></div>
+      </aside>
+    </main>
+
+    <template id="listingTemplate">
+      <article class="listing">
+        <strong class="name"></strong>
+        <p class="meta"></p>
+        <p class="price"></p>
+        <a class="link" target="_blank" rel="noopener noreferrer"></a>
+        <button class="buyBtn">Satın Al (MATIC)</button>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,473 @@
+const POLYGON_CHAIN_ID = "0x89";
+const COMMISSION_RATE = 0.1;
+const PLATFORM_WALLET = "0x000000000000000000000000000000000000dEaD";
+const STORAGE_KEY = "son_pixel_market_v2";
+
+const GRID_COLS = 100;
+const GRID_ROWS = 60;
+const CELL_SIZE = 10;
+
+let currentAccount = null;
+let dragStart = null;
+let dragCurrent = null;
+let activeSelection = null;
+
+const connectWalletBtn = document.getElementById("connectWalletBtn");
+const walletStatus = document.getElementById("walletStatus");
+const pixelCanvas = document.getElementById("pixelCanvas");
+const ctx = pixelCanvas.getContext("2d");
+const selectionInfo = document.getElementById("selectionInfo");
+const stats = document.getElementById("stats");
+const preview = document.getElementById("preview");
+const mintForm = document.getElementById("mintForm");
+const updateContentForm = document.getElementById("updateContentForm");
+const sellForm = document.getElementById("sellForm");
+const marketList = document.getElementById("marketList");
+const history = document.getElementById("history");
+const listingTemplate = document.getElementById("listingTemplate");
+
+const defaultState = { blocks: [], listings: [], transactions: [] };
+const imageCache = new Map();
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? JSON.parse(raw) : structuredClone(defaultState);
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function shortAddress(address) {
+  if (!address) return "";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function cleanUrl(url) {
+  const value = (url || "").trim();
+  if (!value) return "";
+  const parsed = new URL(value);
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Sadece http/https URL kullanılabilir.");
+  }
+  return parsed.toString();
+}
+
+function overlaps(a, b) {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+function normalizeRect(start, end) {
+  const minX = Math.min(start.x, end.x);
+  const minY = Math.min(start.y, end.y);
+  const maxX = Math.max(start.x, end.x);
+  const maxY = Math.max(start.y, end.y);
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+function getCanvasCell(evt) {
+  const rect = pixelCanvas.getBoundingClientRect();
+  const scaleX = pixelCanvas.width / rect.width;
+  const scaleY = pixelCanvas.height / rect.height;
+  const x = Math.floor(((evt.clientX - rect.left) * scaleX) / CELL_SIZE);
+  const y = Math.floor(((evt.clientY - rect.top) * scaleY) / CELL_SIZE);
+  return {
+    x: Math.max(0, Math.min(GRID_COLS - 1, x)),
+    y: Math.max(0, Math.min(GRID_ROWS - 1, y)),
+  };
+}
+
+function selectedRect() {
+  if (dragStart && dragCurrent) return normalizeRect(dragStart, dragCurrent);
+  return activeSelection;
+}
+
+function findBlockByRect(rect) {
+  if (!rect) return null;
+  const state = loadState();
+  return state.blocks.find((b) => b.x === rect.x && b.y === rect.y && b.w === rect.w && b.h === rect.h) || null;
+}
+
+function drawBlockImage(block) {
+  if (!block.imageUrl) return;
+
+  let img = imageCache.get(block.imageUrl);
+  if (!img) {
+    img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = block.imageUrl;
+    img.onload = () => render();
+    img.onerror = () => imageCache.delete(block.imageUrl);
+    imageCache.set(block.imageUrl, img);
+    return;
+  }
+
+  if (!img.complete || img.naturalWidth === 0) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+  ctx.clip();
+  ctx.drawImage(img, block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+  ctx.restore();
+}
+
+function drawGrid() {
+  const state = loadState();
+  ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+
+  state.blocks.forEach((block) => {
+    const listing = state.listings.find((l) => l.blockId === block.id);
+    if (listing) {
+      ctx.fillStyle = "#f59e0b";
+    } else if (currentAccount && block.owner.toLowerCase() === currentAccount.toLowerCase()) {
+      ctx.fillStyle = "#2563eb";
+    } else {
+      ctx.fillStyle = "#7c3aed";
+    }
+
+    ctx.fillRect(block.x * CELL_SIZE, block.y * CELL_SIZE, block.w * CELL_SIZE, block.h * CELL_SIZE);
+    drawBlockImage(block);
+  });
+
+  ctx.strokeStyle = "rgba(148,163,184,0.2)";
+  for (let x = 0; x <= GRID_COLS; x += 1) {
+    ctx.beginPath();
+    ctx.moveTo(x * CELL_SIZE, 0);
+    ctx.lineTo(x * CELL_SIZE, GRID_ROWS * CELL_SIZE);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= GRID_ROWS; y += 1) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * CELL_SIZE);
+    ctx.lineTo(GRID_COLS * CELL_SIZE, y * CELL_SIZE);
+    ctx.stroke();
+  }
+
+  const rect = selectedRect();
+  if (rect) {
+    ctx.strokeStyle = "#5eead4";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rect.x * CELL_SIZE, rect.y * CELL_SIZE, rect.w * CELL_SIZE, rect.h * CELL_SIZE);
+    ctx.lineWidth = 1;
+  }
+
+  const total = GRID_COLS * GRID_ROWS;
+  const usedPixels = state.blocks.reduce((acc, b) => acc + b.w * b.h, 0);
+  stats.textContent = `Toplam ${total} piksel | Ayrılmış ${usedPixels} | Boş ${total - usedPixels} | Blok ${state.blocks.length}`;
+}
+
+async function ensurePolygonNetwork() {
+  if (!window.ethereum) throw new Error("MetaMask bulunamadı.");
+  const currentChain = await window.ethereum.request({ method: "eth_chainId" });
+  if (currentChain === POLYGON_CHAIN_ID) return;
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: POLYGON_CHAIN_ID }],
+    });
+  } catch (error) {
+    if (error && error.code === 4902) {
+      throw new Error("Polygon ağı MetaMask'te bulunamadı. Lütfen ağı manuel ekleyin.");
+    }
+    throw new Error("Polygon Mainnet (MATIC) ağına geçiş yapılamadı.");
+  }
+}
+
+async function connectWallet() {
+  if (!window.ethereum) throw new Error("MetaMask bulunamadı.");
+  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+  currentAccount = accounts[0];
+  await ensurePolygonNetwork();
+  walletStatus.textContent = `Bağlı: ${shortAddress(currentAccount)}`;
+  render();
+}
+
+function mintBlock(name, linkUrl, imageUrl) {
+  if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
+  const rect = selectedRect();
+  if (!rect) throw new Error("Önce tuvalden alan seçin.");
+
+  const state = loadState();
+  if (state.blocks.some((b) => overlaps(b, rect))) {
+    throw new Error("Seçili alanın bir kısmı zaten dolu.");
+  }
+
+  const id = crypto.randomUUID();
+  state.blocks.push({
+    id,
+    name,
+    owner: currentAccount,
+    linkUrl: cleanUrl(linkUrl),
+    imageUrl: cleanUrl(imageUrl),
+    ...rect,
+  });
+  saveState(state);
+}
+
+function updateSelectedBlockContent(linkUrl, imageUrl) {
+  if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
+  const rect = selectedRect();
+  const block = findBlockByRect(rect);
+  if (!block) throw new Error("Seçili blok bulunamadı.");
+  if (block.owner.toLowerCase() !== currentAccount.toLowerCase()) {
+    throw new Error("Sadece blok sahibi link/resim güncelleyebilir.");
+  }
+
+  const state = loadState();
+  const target = state.blocks.find((item) => item.id === block.id);
+  target.linkUrl = cleanUrl(linkUrl);
+  target.imageUrl = cleanUrl(imageUrl);
+  saveState(state);
+}
+
+function findBlockAtCell(cell) {
+  const state = loadState();
+  return state.blocks.find((block) => (
+    cell.x >= block.x
+    && cell.y >= block.y
+    && cell.x < block.x + block.w
+    && cell.y < block.y + block.h
+  ));
+}
+
+function listSelectedBlock(price) {
+  if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
+  const rect = selectedRect();
+  if (!rect) throw new Error("Önce tuvalden blok seçin.");
+
+  const state = loadState();
+  const block = state.blocks.find((b) => b.x === rect.x && b.y === rect.y && b.w === rect.w && b.h === rect.h);
+  if (!block) throw new Error("Bu blok daha önce sahiplenilmemiş.");
+  if (block.owner.toLowerCase() !== currentAccount.toLowerCase()) throw new Error("Sadece sahibi satabilir.");
+  if (state.listings.some((l) => l.blockId === block.id)) throw new Error("Blok zaten satışta.");
+  if (price <= 0) throw new Error("Fiyat 0'dan büyük olmalı.");
+
+  state.listings.push({ blockId: block.id, seller: currentAccount, price: Number(price) });
+  saveState(state);
+}
+
+async function sendMatic(from, to, amountMatic) {
+  const valueHex = ethers.utils.hexValue(ethers.utils.parseEther(String(amountMatic)));
+  return window.ethereum.request({ method: "eth_sendTransaction", params: [{ from, to, value: valueHex }] });
+}
+
+async function buyListing(blockId) {
+  if (!currentAccount) throw new Error("Önce cüzdan bağlayın.");
+  await ensurePolygonNetwork();
+
+  const state = loadState();
+  const listing = state.listings.find((l) => l.blockId === blockId);
+  if (!listing) throw new Error("İlan bulunamadı.");
+
+  const block = state.blocks.find((b) => b.id === blockId);
+  if (!block) throw new Error("Blok bulunamadı.");
+
+  const total = Number(listing.price);
+  const commission = Number((total * COMMISSION_RATE).toFixed(6));
+  const sellerPayout = Number((total - commission).toFixed(6));
+
+  const commissionTx = await sendMatic(currentAccount, PLATFORM_WALLET, commission);
+  const sellerTx = await sendMatic(currentAccount, listing.seller, sellerPayout);
+
+  block.owner = currentAccount;
+  state.listings = state.listings.filter((l) => l.blockId !== blockId);
+  state.transactions.push({
+    blockId,
+    blockName: block.name,
+    buyer: currentAccount,
+    seller: listing.seller,
+    total,
+    commission,
+    sellerPayout,
+    commissionTx,
+    sellerTx,
+    at: new Date().toISOString(),
+  });
+  saveState(state);
+}
+
+function renderPreview() {
+  const block = findBlockByRect(selectedRect());
+  if (!block) {
+    preview.className = "preview muted";
+    preview.innerHTML = "Seçili blok detayları burada görünecek.";
+    return;
+  }
+
+  const ownership = currentAccount && block.owner.toLowerCase() === currentAccount.toLowerCase() ? "(Senin)" : "";
+  preview.className = "preview";
+  preview.innerHTML = `
+    <strong>${block.name} ${ownership}</strong>
+    <p>Koordinat: (${block.x}, ${block.y}) ${block.w}x${block.h}</p>
+    <p>Sahip: ${shortAddress(block.owner)}</p>
+    <p>Link: ${block.linkUrl ? `<a href="${block.linkUrl}" target="_blank" rel="noopener noreferrer">${block.linkUrl}</a>` : "-"}</p>
+    ${block.imageUrl ? `<img src="${block.imageUrl}" alt="${block.name}" />` : ""}
+  `;
+
+  document.getElementById("updateLink").value = block.linkUrl || "";
+  document.getElementById("updateImage").value = block.imageUrl || "";
+}
+
+function renderMarketAndHistory() {
+  const state = loadState();
+  marketList.innerHTML = "";
+
+  if (!state.listings.length) {
+    marketList.innerHTML = '<p class="muted">Aktif ilan yok.</p>';
+  } else {
+    state.listings.forEach((listing) => {
+      const block = state.blocks.find((b) => b.id === listing.blockId);
+      if (!block) return;
+      const item = listingTemplate.content.cloneNode(true);
+      item.querySelector(".name").textContent = block.name;
+      item.querySelector(".meta").textContent = `Koordinat: (${block.x},${block.y}) ${block.w}x${block.h} | Satıcı: ${shortAddress(listing.seller)}`;
+      item.querySelector(".price").textContent = `Fiyat: ${listing.price} MATIC (Komisyon: ${(listing.price * COMMISSION_RATE).toFixed(4)} MATIC)`;
+
+      const linkEl = item.querySelector(".link");
+      if (block.linkUrl) {
+        linkEl.href = block.linkUrl;
+        linkEl.textContent = "Reklam Linki";
+      } else {
+        linkEl.textContent = "";
+      }
+
+      item.querySelector(".buyBtn").addEventListener("click", async () => {
+        try {
+          await buyListing(listing.blockId);
+          render();
+          alert("Satın alma tamamlandı.");
+        } catch (error) {
+          alert(error.message || "Satın alma başarısız.");
+        }
+      });
+      marketList.appendChild(item);
+    });
+  }
+
+  if (!state.transactions.length) {
+    history.innerHTML = '<p class="muted">İşlem geçmişi boş.</p>';
+  } else {
+    history.innerHTML = state.transactions
+      .slice()
+      .reverse()
+      .map((tx) => `<div class="listing"><strong>${tx.blockName}</strong><p>${tx.total} MATIC | komisyon ${tx.commission}</p></div>`)
+      .join("");
+  }
+}
+
+function renderSelectionInfo() {
+  const rect = selectedRect();
+  if (!rect) {
+    selectionInfo.textContent = "Tuvalde sürükleyip bir dikdörtgen seç.";
+    return;
+  }
+
+  const block = findBlockByRect(rect);
+  if (block) {
+    selectionInfo.textContent = `Blok: ${block.name} | x=${rect.x}, y=${rect.y}, ${rect.w}x${rect.h}`;
+    return;
+  }
+
+  selectionInfo.textContent = `Seçim: x=${rect.x}, y=${rect.y}, genişlik=${rect.w}, yükseklik=${rect.h}, piksel=${rect.w * rect.h}`;
+}
+
+function render() {
+  renderSelectionInfo();
+  drawGrid();
+  renderPreview();
+  renderMarketAndHistory();
+}
+
+pixelCanvas.addEventListener("pointerdown", (evt) => {
+  dragStart = getCanvasCell(evt);
+  dragCurrent = dragStart;
+  activeSelection = null;
+  pixelCanvas.setPointerCapture(evt.pointerId);
+  render();
+});
+
+pixelCanvas.addEventListener("pointermove", (evt) => {
+  if (!dragStart) return;
+  dragCurrent = getCanvasCell(evt);
+  render();
+});
+
+pixelCanvas.addEventListener("pointerup", (evt) => {
+  if (!dragStart) return;
+  const start = dragStart;
+  const end = dragCurrent || start;
+  const rect = normalizeRect(start, end);
+
+  if (rect.w === 1 && rect.h === 1) {
+    const hitBlock = findBlockAtCell(end);
+    activeSelection = hitBlock ? { x: hitBlock.x, y: hitBlock.y, w: hitBlock.w, h: hitBlock.h } : rect;
+  } else {
+    activeSelection = rect;
+  }
+
+  dragStart = null;
+  dragCurrent = null;
+  pixelCanvas.releasePointerCapture(evt.pointerId);
+  render();
+});
+
+connectWalletBtn.addEventListener("click", async () => {
+  try {
+    await connectWallet();
+  } catch (error) {
+    alert(error.message || "Cüzdan bağlanamadı.");
+  }
+});
+
+mintForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    const name = document.getElementById("blockName").value.trim();
+    const linkUrl = document.getElementById("blockLink").value;
+    const imageUrl = document.getElementById("blockImage").value;
+    mintBlock(name, linkUrl, imageUrl);
+    mintForm.reset();
+    render();
+  } catch (error) {
+    alert(error.message || "Blok sahiplenilemedi.");
+  }
+});
+
+updateContentForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    const linkUrl = document.getElementById("updateLink").value;
+    const imageUrl = document.getElementById("updateImage").value;
+    updateSelectedBlockContent(linkUrl, imageUrl);
+    render();
+  } catch (error) {
+    alert(error.message || "İçerik güncellenemedi.");
+  }
+});
+
+sellForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  try {
+    const price = Number(document.getElementById("sellPrice").value);
+    listSelectedBlock(price);
+    sellForm.reset();
+    render();
+  } catch (error) {
+    alert(error.message || "İlan verilemedi.");
+  }
+});
+
+if (window.ethereum) {
+  window.ethereum.on("accountsChanged", (accounts) => {
+    currentAccount = accounts[0] || null;
+    walletStatus.textContent = currentAccount ? `Bağlı: ${shortAddress(currentAccount)}` : "Bağlı değil";
+    render();
+  });
+}
+
+render();
